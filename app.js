@@ -32,8 +32,37 @@ function getConfigurations() {
     }));
 }
 
-parseFileData(inputFilePath).then(console.log).catch((err) => {
-  console.log('Error:');
-  console.log(err.message);
-});
-getConfigurations().then(console.log);
+function roundToCents(amount) {
+  return Math.ceil(amount * 100) / 100;
+}
+
+function calculateCashInCommissionFees(data, config) {
+  return new Promise((resolve) => {
+    const result = data.operation.amount * config.percents * 0.01;
+    resolve(result > config.max.amount ? roundToCents(5) : roundToCents(result));
+  });
+}
+
+async function main() {
+  let inputData = null;
+  let configs = null;
+  if (inputFilePath) {
+    try {
+      inputData = await parseFileData(inputFilePath);
+      configs = await getConfigurations();
+      inputData.map(async (item) => {
+        console.log(item);
+        if (item.type === 'cash_in') {
+          const commissionFee = await calculateCashInCommissionFees(item, configs.cashInConfig);
+          console.log(commissionFee.toFixed(2));
+        }
+        return true;
+      });
+    } catch (err) {
+      console.log('Error:');
+      console.log(err.message);
+    }
+  }
+}
+
+main();
