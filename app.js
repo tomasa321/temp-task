@@ -8,14 +8,12 @@ const cashOutLegalConfigUrl = 'http://private-38e18c-uzduotis.apiary-mock.com/co
 
 function parseFileData(filePath) {
   return new Promise((resolve) => {
-    let inputData = fs.readFileSync(filePath, 'utf8');
-    inputData = inputData.split('\n');
-    inputData = inputData.map((item) => item.replace('},', '}'));
-    const finalDataArray = [];
-    for (let i = 1; i < inputData.length - 1; i += 1) {
-      finalDataArray.push(JSON.parse(inputData[i]));
-    }
-    resolve(finalDataArray);
+    const inputData = fs.readFileSync(filePath, 'utf8');
+    // https://stackoverflow.com/a/34347475
+    const regex = /,(?!\s*?[{["'\w])/g;
+    const correct = inputData.replace(regex, ''); // remove all trailing commas
+    const result = JSON.parse(correct); // build a new JSON object based on correct string
+    resolve(result);
   });
 }
 
@@ -39,7 +37,56 @@ function roundToCents(amount) {
 function calculateCashInCommissionFees(data, config) {
   return new Promise((resolve) => {
     const result = data.operation.amount * config.percents * 0.01;
-    resolve(result > config.max.amount ? roundToCents(5) : roundToCents(result));
+    resolve(result > config.max.amount ? roundToCents(config.max.amount) : roundToCents(result));
+  });
+}
+
+function calculateCashOutNaturalCommissionFees(data, config, index) {
+  return new Promise((resolve) => {
+    let weekDay = new Date(data[index].date).getDay();
+    if (weekDay === 0) {
+      weekDay = 7;
+    }
+    let sum = 0;
+    let shuffleIndex = index;
+
+    if (weekDay === 1) {
+      sum = data[shuffleIndex].operation.amount;
+    } else {
+      while (shuffleIndex > 0 && weekDay > 1) {
+        if (data[shuffleIndex].user_id === data[index].user_id
+        && data[shuffleIndex].type === 'cash_out'
+        && data[shuffleIndex].user_type === 'natural') {
+          // including current transaction:
+          if (sum === 0 || data[shuffleIndex].operation.amount < config.week_limit.amount) {
+            sum += data[shuffleIndex].operation.amount;
+
+          // if transaction before current one is bigger then week limit it means that limit
+          // is exceeded
+          } else if (sum !== 0 && data[shuffleIndex].operation.amount >= config.week_limit.amount) {
+            sum = data[index].operation.amount + config.week_limit.amount;
+            shuffleIndex = 1;
+          }
+          weekDay = new Date(data[shuffleIndex].date).getDay();
+          if (weekDay === 0) {
+            weekDay = 7;
+          }
+        }
+        shuffleIndex -= 1;
+      }
+    }
+
+    const fees = sum <= config.week_limit.amount ? 0 : (sum - config.week_limit.amount)
+      * config.percents * 0.01;
+
+    resolve(fees);
+  });
+}
+
+function calculateCashOutLegalCommissionFees(data, config) {
+  return new Promise((resolve) => {
+    const result = data.operation.amount * config.percents * 0.01;
+    resolve(result < config.min.amount ? roundToCents(config.min.amount) : roundToCents(result));
   });
 }
 
@@ -50,10 +97,17 @@ async function main() {
     try {
       inputData = await parseFileData(inputFilePath);
       configs = await getConfigurations();
-      inputData.map(async (item) => {
-        console.log(item);
+      inputData.map(async (item, index) => {
         if (item.type === 'cash_in') {
           const commissionFee = await calculateCashInCommissionFees(item, configs.cashInConfig);
+          console.log(commissionFee.toFixed(2));
+        } else if (item.type === 'cash_out' && item.user_type === 'natural') {
+          const commissionFee = await calculateCashOutNaturalCommissionFees(inputData,
+            configs.cashOutNaturalConfig, index);
+          console.log(commissionFee.toFixed(2));
+        } else if (item.type === 'cash_out' && item.user_type === 'juridical') {
+          const commissionFee = await calculateCashOutLegalCommissionFees(item,
+            configs.cashOutLegalConfig);
           console.log(commissionFee.toFixed(2));
         }
         return true;
