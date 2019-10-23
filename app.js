@@ -1,10 +1,9 @@
 const fs = require('fs');
 const request = require('request-promise');
+const cfg = require('./config');
 
 const inputFilePath = process.argv[2];
-const cashInConfigUrl = 'http://private-38e18c-uzduotis.apiary-mock.com/config/cash-in';
-const cashOutNaturalConfigUrl = 'http://private-38e18c-uzduotis.apiary-mock.com/config/cash-out/natural';
-const cashOutLegalConfigUrl = 'http://private-38e18c-uzduotis.apiary-mock.com/config/cash-out/juridical';
+const { cashInConfigUrl, cashOutNaturalConfigUrl, cashOutLegalConfigUrl } = cfg;
 
 function parseFileData(filePath) {
   return new Promise((resolve) => {
@@ -55,14 +54,14 @@ function calculateCashOutNaturalCommissionFees(data, config, index) {
     } else {
       while (shuffleIndex > 0 && weekDay > 1) {
         if (data[shuffleIndex].user_id === data[index].user_id
-        && data[shuffleIndex].type === 'cash_out'
-        && data[shuffleIndex].user_type === 'natural') {
+          && data[shuffleIndex].type === 'cash_out'
+          && data[shuffleIndex].user_type === 'natural') {
           // including current transaction:
           if (sum === 0 || data[shuffleIndex].operation.amount < config.week_limit.amount) {
             sum += data[shuffleIndex].operation.amount;
 
-          // if transaction before current one is bigger then week limit it means that limit
-          // is exceeded
+            // if transaction before current one is bigger then week limit it means that limit
+            // is exceeded
           } else if (sum !== 0 && data[shuffleIndex].operation.amount >= config.week_limit.amount) {
             sum = data[index].operation.amount + config.week_limit.amount;
             shuffleIndex = 1;
@@ -90,33 +89,30 @@ function calculateCashOutLegalCommissionFees(data, config) {
   });
 }
 
-async function main() {
+async function main(filePath) {
   let inputData = null;
   let configs = null;
-  if (inputFilePath) {
-    try {
-      inputData = await parseFileData(inputFilePath);
-      configs = await getConfigurations();
-      inputData.map(async (item, index) => {
-        if (item.type === 'cash_in') {
-          const commissionFee = await calculateCashInCommissionFees(item, configs.cashInConfig);
-          console.log(commissionFee.toFixed(2));
-        } else if (item.type === 'cash_out' && item.user_type === 'natural') {
-          const commissionFee = await calculateCashOutNaturalCommissionFees(inputData,
-            configs.cashOutNaturalConfig, index);
-          console.log(commissionFee.toFixed(2));
-        } else if (item.type === 'cash_out' && item.user_type === 'juridical') {
-          const commissionFee = await calculateCashOutLegalCommissionFees(item,
-            configs.cashOutLegalConfig);
-          console.log(commissionFee.toFixed(2));
-        }
-        return true;
-      });
-    } catch (err) {
-      console.log('Error:');
-      console.log(err.message);
-    }
+  if (fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()) {
+    inputData = await parseFileData(filePath);
+    configs = await getConfigurations();
+    inputData.map(async (item, index) => {
+      if (item.type === 'cash_in') {
+        const commissionFee = await calculateCashInCommissionFees(item, configs.cashInConfig);
+        console.log(commissionFee.toFixed(2));
+      } else if (item.type === 'cash_out' && item.user_type === 'natural') {
+        const commissionFee = await calculateCashOutNaturalCommissionFees(inputData,
+          configs.cashOutNaturalConfig, index);
+        console.log(commissionFee.toFixed(2));
+      } else if (item.type === 'cash_out' && item.user_type === 'juridical') {
+        const commissionFee = await calculateCashOutLegalCommissionFees(item,
+          configs.cashOutLegalConfig);
+        console.log(commissionFee.toFixed(2));
+      }
+    });
+  } else {
+    return Promise.reject();
   }
+  return Promise.resolve();
 }
 
-main();
+main(inputFilePath).catch(() => { });

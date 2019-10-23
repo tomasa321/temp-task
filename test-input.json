@@ -29,4 +29,24 @@
             "currency": "EUR"
         }
     },
+    {
+        "date": "2016-02-16",
+        "user_id": 1,
+        "user_type": "natural",
+        "type": "cash_out",
+        "operation": {
+            "amount": 1100.00,
+            "currency": "EUR"
+        }
+    },
+    {
+        "date": "2016-02-21",
+        "user_id": 1,
+        "user_type": "natural",
+        "type": "cash_out",
+        "operation": {
+            "amount": 100.00,
+            "currency": "EUR"
+        }
+    },
 ]
